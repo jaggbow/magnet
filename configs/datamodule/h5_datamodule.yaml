@@ -1,0 +1,14 @@
+_target_: datamodule.h5_datamodule.HDF5Datamodule
+name: h5_datamodule
+train_path: /home/mila/o/oussama.boussif/pde_oned/data/CE_train_E3.h5
+val_path: /home/mila/o/oussama.boussif/pde_oned/data/CE_valid_E3.h5
+test_path: /home/mila/o/oussama.boussif/pde_oned/data/CE_test_E3.h5
+nt_train: 250
+nx_train: 50
+nt_val: 250
+nx_val: 50
+nt_test: 250
+nx_test: 50
+
+num_workers: 0
+batch_size: 32

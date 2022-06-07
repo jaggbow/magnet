@@ -1,0 +1,20 @@
+name: magnet_gnn
+params:
+  # Model hyperparameters
+  time_slice: 25
+  latent_dim: 128
+  num_message_passing_steps: 5
+  mlp_layers: 4
+  mlp_hidden: 128
+  radius: 0.08
+  n_chan: 128
+  teacher_forcing: True
+  codec_neighbors: 2
+  noise: 0
+  interpolation: area
+  # Optimization hyperparameters
+  factor: 0.3
+  step_size: 50
+  loss: l1
+  lr: 0.001
+  weight_decay: 0

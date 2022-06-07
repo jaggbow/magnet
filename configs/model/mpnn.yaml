@@ -1,0 +1,19 @@
+name: mpnn
+params:
+  # Model hyperparameters
+  node_in: 27
+  latent_dim: 256
+  edge_in: 26
+  mlp_num_layers: 2
+  mlp_hidden_dim: 256
+  num_message_passing_steps: 5
+  node_out: 25
+  time_slice: 25
+  radius: 1
+  teacher_forcing: True
+  # Optimization hyperparameters
+  factor: 0.3
+  step_size: 50
+  loss: l1
+  lr: 0.001
+  weight_decay: 0

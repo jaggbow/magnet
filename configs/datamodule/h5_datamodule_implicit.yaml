@@ -1,0 +1,16 @@
+_target_: datamodule.h5_datamodule.HDF5DatamoduleImplicit
+name: h5_datamodule_implicit
+train_path: /home/mila/o/oussama.boussif/pde_oned/data/KS_train.h5
+val_path: /home/mila/o/oussama.boussif/pde_oned/data/KS_valid.h5
+test_path: /home/mila/o/oussama.boussif/pde_oned/data/Heat_test.h5
+nt_train: 128
+nx_train: 256
+nt_val: 128
+nx_val: 256
+nt_test: 256
+nx_test: 256
+sampling: uniform
+samples: 32
+
+num_workers: 0
+batch_size: 32

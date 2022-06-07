@@ -1,0 +1,26 @@
+defaults:
+  - model: fno_1d
+  - datamodule: h5_datamodule
+  - trainer: default
+  - callbacks: default.yaml
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+seed: 42
+name: fno_1d
+ckpt_path: null
+hydra:
+  sweep:
+    dir: /network/scratch/o/oussama.boussif/pdeone/logs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  sweeper:
+    sampler:
+      seed: 42
+    direction: minimize
+    study_name: fno_1d
+    storage: null
+    n_trials: 15
+    n_jobs: 2
+  run:
+    dir: /network/scratch/o/oussama.boussif/pdeone/logs/experiments/${name}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}

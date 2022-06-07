@@ -1,0 +1,6 @@
+_target_: pytorch_lightning.Trainer
+track_grad_norm: -1
+max_epochs: 100
+gpus: 1
+precision: 32
+strategy: null
