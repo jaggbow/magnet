@@ -1,6 +1,7 @@
 # MAgNet: Mesh-Agnostic Neural PDE Solver
 This is the official repository to the paper "MAgNet: Mesh-Agnostic Neural PDE Solver". In this paper, we aim to address the problem of learning solutions to Pratial Differential Equations (PDE) while also generalizing to any mesh or resolution at test-time. This effectively enables us to generate predictions at any point of the PDE domain.  
 
+[Bibtex citation incoming...]
 
 ![MAgNet](assets/magnet.jpg "MAgNet: Mesh-Agnostic Neural PDE Solver")
 
@@ -52,3 +53,25 @@ The structure of the dataset is as follows:
 
 Each file is formatted as follows: `CE_{mode}_{dataset}_{resolution}.h5` where `mode` can be `train` or `test` and `dataset` can be `E1`, `E2` or `E3` and `resolution` denotes the resolution of the dataset
 # Experiments
+We use `hydra` for config management and command line parsing so it's straightforward to run experiments using our code-base. Below is an example command for training the **MAgNet[CNN]** model on the **E1** dataset for 250 epochs on four GPUs:
+```
+python run.py \
+model=magnet_cnn \
+name=nomeshbis \
+datamodule=h5_datamodule_implicit \
+datamodule.train_path={train_path} \
+datamodule.val_path={val_path}' \
+datamodule.test_path={test_path} \
+datamodule.nt_train=250 \
+datamodule.nx_train={train_resolution} \
+datamodule.nt_val=250 \
+datamodule.nx_val={val_resolution} \
+datamodule.nt_test=250 \
+datamodule.nx_test={test_resolution} \
+datamodule.samples=16 \
+model.params.time_slice=25 \
+trainer.max_epochs=250 \
+trainer.gpus=2 \
+trainer.strategy='ddp'
+```
+We will shortly release all scripts used for running experiments in the paper.
