@@ -4,6 +4,7 @@ This is the official repository to the paper "MAgNet: Mesh-Agnostic Neural PDE S
 
 ![MAgNet](assets/magnet.jpg "MAgNet: Mesh-Agnostic Neural PDE Solver")
 
+![Predictions](assets/predictions.JPG "Predictions vs Ground-Truth for different resolutions")
 # Requirements
 
 Start by installing the required modules:
@@ -11,5 +12,10 @@ Start by installing the required modules:
 pip install -r requirements.txt
 ```
 # Dataset
-The dataset is available at the following link: [todo: link]
+The dataset is available for download at the following link: [todo: link].
+
+The structure of the dataset is as follows:
+```
+
+```
 # Experiments
