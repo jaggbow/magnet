@@ -1,5 +1,5 @@
 # MAgNet: Mesh-Agnostic Neural PDE Solver
-This is the official repository to the paper "MAgNet: Mesh-Agnostic Neural PDE Solver" by [Oussama Boussif](https://jaggbow.github.io), [Dan Assouline](https://github.com/danassou), and professors [Loubna Benabbou](https://www.uqar.ca/universite/a-propos-de-l-uqar/departements/unites-departementales-des-sciences-de-la-gestion/benabbou-lobna) and [Yoshua Bengio](https://yoshuabengio.org/). 
+This is the official repository to the paper ["MAgNet: Mesh-Agnostic Neural PDE Solver"](https://openreview.net/pdf?id=tbIJmAdqYc8) by [Oussama Boussif](https://jaggbow.github.io), [Dan Assouline](https://github.com/danassou), and professors [Loubna Benabbou](https://www.uqar.ca/universite/a-propos-de-l-uqar/departements/unites-departementales-des-sciences-de-la-gestion/benabbou-lobna) and [Yoshua Bengio](https://yoshuabengio.org/). 
 
 In this paper, we aim to address the problem of learning solutions to Pratial Differential Equations (PDE) while also generalizing to any mesh or resolution at test-time. This effectively enables us to generate predictions at any point of the PDE domain.  
 
