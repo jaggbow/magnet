@@ -33,6 +33,7 @@ def make_coord(shape, ranges=None, flatten=True):
     if flatten:
         ret = ret.view(-1, ret.shape[-1])
     return ret
+
 def get_logger(name=__name__):
     """
     Initializes multi-GPU-friendly python command line logger.
@@ -55,10 +56,16 @@ def get_logger(name=__name__):
         setattr(logger, level, rank_zero_only(getattr(logger, level)))
 
     return logger
+
 def to_pixel_samples(img):
     """ Convert the image to coord-RGB pairs.
-        img: Tensor, (C, L)
+        img: Tensor, (C, L) or (C, H, W)
     """
-    coord = make_coord(img.shape[-1:])
+    if len(img.shape) == 2:
+        coord = make_coord(img.shape[-1:])
+    elif len(img.shape) == 3:
+        coord = make_coord(img.shape[-1:])
+    else:
+        NotImplementedError
     rgb = img.view(img.shape[0], -1).permute(1, 0)
     return coord, rgb
