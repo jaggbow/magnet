@@ -1,4 +1,4 @@
-name: magnet_cnn_no_int
+name: magnet_cnn_no_interaction
 params:
   # Model hyperparameters
   time_slice: 16
