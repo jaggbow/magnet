@@ -1,7 +1,18 @@
 # MAgNet: Mesh-Agnostic Neural PDE Solver
-This is the official repository to the paper "MAgNet: Mesh-Agnostic Neural PDE Solver". In this paper, we aim to address the problem of learning solutions to Pratial Differential Equations (PDE) while also generalizing to any mesh or resolution at test-time. This effectively enables us to generate predictions at any point of the PDE domain.  
+This is the official repository to the paper ["MAgNet: Mesh-Agnostic Neural PDE Solver"](https://openreview.net/pdf?id=tbIJmAdqYc8) by [Oussama Boussif](https://jaggbow.github.io), [Dan Assouline](https://github.com/danassou), and professors [Loubna Benabbou](https://www.uqar.ca/universite/a-propos-de-l-uqar/departements/unites-departementales-des-sciences-de-la-gestion/benabbou-lobna) and [Yoshua Bengio](https://yoshuabengio.org/). 
 
-[Bibtex citation incoming...]
+In this paper, we aim to address the problem of learning solutions to Pratial Differential Equations (PDE) while also generalizing to any mesh or resolution at test-time. This effectively enables us to generate predictions at any point of the PDE domain.  
+
+```
+@inproceedings{
+boussif2022magnet,
+title={{MA}gNet: Mesh Agnostic Neural {PDE} Solver},
+author={Oussama Boussif and Yoshua Bengio and Loubna Benabbou and Dan Assouline},
+booktitle={ICML 2022 2nd AI for Science Workshop},
+year={2022},
+url={https://openreview.net/forum?id=tbIJmAdqYc8}
+}
+```
 
 ![MAgNet](assets/magnet.jpg "MAgNet: Mesh-Agnostic Neural PDE Solver")
 
@@ -51,7 +62,7 @@ The structure of the dataset is as follows:
             CE_train_E3_50.h5
 ```
 
-Each file is formatted as follows: `CE_{mode}_{dataset}_{resolution}.h5` where `mode` can be `train` or `test` and `dataset` can be `E1`, `E2` or `E3` and `resolution` denotes the resolution of the dataset
+Each file is formatted as follows: `CE_{mode}_{dataset}_{resolution}.h5` where `mode` can be `train` or `test` and `dataset` can be `E1`, `E2` or `E3` and `resolution` denotes the resolution of the dataset. The folder `regular` contains simulations on a regular grid and `irregular` contains simulations on an irregular grid.
 # Experiments
 We use `hydra` for config management and command line parsing so it's straightforward to run experiments using our code-base. Below is an example command for training the **MAgNet[CNN]** model on the **E1** dataset for 250 epochs on four GPUs:
 ```
