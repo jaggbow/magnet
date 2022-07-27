@@ -68,7 +68,7 @@ We use `hydra` for config management and command line parsing so it's straightfo
 ```
 python run.py \
 model=magnet_cnn \
-name=nomeshbis \
+name=magnet_cnn \
 datamodule=h5_datamodule_implicit \
 datamodule.train_path={train_path} \
 datamodule.val_path={val_path}' \
@@ -82,7 +82,7 @@ datamodule.nx_test={test_resolution} \
 datamodule.samples=16 \
 model.params.time_slice=25 \
 trainer.max_epochs=250 \
-trainer.gpus=2 \
+trainer.gpus=4 \
 trainer.strategy='ddp'
 ```
 We will shortly release all scripts used for running experiments in the paper.
