@@ -1,0 +1,16 @@
+name: fno_2d
+params:
+  # Model hyperparameters
+  modes_1: 12
+  modes_2: 12
+  width: 256
+  num_layers: 5
+  time_history: 25
+  time_future: 25
+  teacher_forcing: True
+  # Optimization hyperparameters
+  factor: 0.3
+  step_size: 50
+  loss: l1
+  lr: 0.001
+  weight_decay: 0
