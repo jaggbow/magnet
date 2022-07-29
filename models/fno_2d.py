@@ -47,7 +47,7 @@ class SpectralConv2d(nn.Module):
         return x
 
 
-class FNO2d(nn.Module):
+class FNO2d(pl.LightningModule):
     def __init__(self,hparams):
     
         super().__init__()
@@ -146,6 +146,7 @@ class FNO2d(nn.Module):
         u, dx, dy, dt = train_batch
         u = u.float()
         dx = dx.float()
+        dy = dy.float()
         dt = dt.float()
 
         u_history = u[:,:self.time_history] # B, T_history, H, W
@@ -176,6 +177,7 @@ class FNO2d(nn.Module):
         u, dx, dy, dt = val_batch
         u = u.float()
         dx = dx.float()
+        dy = dy.float()
         dt = dt.float()
         
         u_history = u[:,:self.time_history] # B, T_history, H, W
