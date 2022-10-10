@@ -344,7 +344,7 @@ class MAgNetCNN_2d(pl.LightningModule):
         N_coords = coords.shape[1]
         T_out = t.shape[-1] - T
 
-        feat = self.feature_encoding(x_t, scale=1)
+        feat = self.feature_encoding(x_t)
         z = self.continuous_decoder(x_t, feat, cell, coords, t) # B*N, T, C
         hr_points = self.projector(z) # B*N, T, 1
         
@@ -380,12 +380,12 @@ class MAgNetCNN_2d(pl.LightningModule):
         
         outputs = torch.stack(outputs, dim=1) # B, T, (WW+N), 1
 
-        out_lr = outputs[:,:,:(W*W)]
-        out_lr = out_lr.permute(0,1,3,2)
-        out_lr = out_lr.reshape(B, T_out, out_lr.shape[2], W, W)
-        out_hr = outputs[:,:,(W*W):]
-        hr_points = hr_points.reshape(B, N_coords, T, -1)
-        hr_points = hr_points.permute(0,2,1,3)
+        out_lr = outputs[:,:,:(W*W)] # B, T, WW, C
+        out_lr = out_lr.permute(0,1,3,2) # B, T, C, WW
+        out_lr = out_lr.reshape(B, T_out, out_lr.shape[2], W, W) # B, T, C, W, W
+        out_hr = outputs[:,:,(W*W):] # B, T, N, C
+        hr_points = hr_points.reshape(B, N_coords, T, -1) # B, N, T, C
+        hr_points = hr_points.permute(0,2,1,3) # B, N, T, C
 
         return out_hr, out_lr, hr_points
     
@@ -402,11 +402,10 @@ class MAgNetCNN_2d(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         t = train_batch['t'].float()
         u = train_batch['lr_frames'].float()
-        B, T, C, L = u.shape
+        B, T, C, W, W = u.shape
         u_values = train_batch['hr_points'].float()
         coords = train_batch['coords'].float()
         cells = train_batch['cells'].float()
-        sample_idx = train_batch['sample_idx']
 
         u_values_future = u_values[:,self.time_slice:] # B, T_future, N, 1
         B, T_future = u_values_future.shape[:2]
@@ -419,21 +418,22 @@ class MAgNetCNN_2d(pl.LightningModule):
 
         for i in range(T_future//self.time_slice):
             out_hr, out_lr, hr_points = self.forward(inp, coords, cells, t[:,i*self.time_slice:(i+2)*self.time_slice], hr_last)
-            y_hat = torch.cat([out_hr, out_lr], dim=2)
+            y_hat = torch.cat([out_hr, out_lr.reshape(*out_lr.shape[:3], -1).permute(0,1,3,2)], dim=2)
             u_values_hat.append(y_hat)
             hr_values_hat.append(hr_points)
         
             if self.teacher_forcing:
-                inp = u[:,(i+1)*self.time_slice:(i+2)*self.time_slice] # B, T, C, L
+                inp = u[:,(i+1)*self.time_slice:(i+2)*self.time_slice] # B, T, C, W, W
                 hr_last = u_values[:,(i+2)*self.time_slice-1]
             else:
-                inp = out_lr.permute(0,1,3,2)
+                inp = out_lr
                 hr_last = out_hr[:,-1]
         
         u_values_hat = torch.cat(u_values_hat, dim=1) # B, T_out, (N+L), 1 
         hr_values_hat = torch.cat(hr_values_hat, dim=1) # B, T_in, N, 1
         
-        target = torch.cat([u_values_future, u[:,self.time_slice:].permute(0,1,3,2)], dim=2)
+
+        target = torch.cat([u_values_future, u[:,self.time_slice:].reshape(B, T-self.time_slice, C, -1).permute(0,1,3,2)], dim=2)
         loss = self.criterion(u_values_hat, target)+self.criterion(hr_values_hat, u_values[:,:-self.time_slice])
         mae_loss = self.mae_criterion(u_values_hat, target)
         interp_loss = self.mae_criterion(hr_values_hat, u_values[:,:-self.time_slice])
@@ -446,8 +446,8 @@ class MAgNetCNN_2d(pl.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
         t = val_batch['t'].float()
-        u = val_batch['lr_frames'].float() # B, T, 1, L
-        B, T, _, L = u.shape
+        u = val_batch['lr_frames'].float() # B, T, 1, W, W
+        B, T, _, W, W = u.shape
         u_values = val_batch['hr_points'].float()
         coords = val_batch['coords'].float()
         cells = val_batch['cells'].float()
@@ -460,12 +460,15 @@ class MAgNetCNN_2d(pl.LightningModule):
         hr_last = u_values[:,self.time_slice-1]
 
         for i in range(T_future//self.time_slice):
-            y_hat, _, _ = self.forward(inp, coords, cells, t[:,i*self.time_slice:(i+2)*self.time_slice], hr_last)
-            
+            y_hat, _, _ = self.forward(inp, coords, cells, t[:,i*self.time_slice:(i+2)*self.time_slice], hr_last)            
             u_values_hat.append(y_hat)
             
-            inp = y_hat.permute(0,1,3,2)
-            inp = F.interpolate(inp.reshape(-1,inp.shape[-2], inp.shape[-1]), size=L, mode='linear', align_corners=False).reshape(B, -1, inp.shape[-2], L)
+            inp = y_hat.permute(0,1,3,2) # B, T, C, WW
+            W_inp = int(inp.shape[-1]**0.5)
+            B, T = inp.shape[:2]
+            inp = inp.reshape(-1, *inp.shape[2:]) # BT, C, WW
+            inp = inp.reshape(-1, inp.shape[1], W_inp, W_inp) # BT, C, W, W
+            inp = F.interpolate(inp, size=W, mode='bilinear', align_corners=False).reshape(B, T, -1, W, W)
             hr_last = y_hat[:,-1]
         
         u_values_hat = torch.cat(u_values_hat, dim=1)

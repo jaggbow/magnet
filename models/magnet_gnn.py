@@ -173,9 +173,9 @@ class MAgNetGNN(pl.LightningModule):
         self.mae_criterion = nn.L1Loss()
 
         self.encoder = Encoder(
-            node_in=self.time_slice+2, 
+            node_in=self.time_slice+3, 
             node_out=self.latent_dim,
-            edge_in=self.time_slice+1, 
+            edge_in=self.time_slice+2, 
             edge_out=self.latent_dim,
             mlp_layers=self.mlp_layers,
             mlp_hidden=self.mlp_hidden,
@@ -190,7 +190,7 @@ class MAgNetGNN(pl.LightningModule):
             mlp_hidden_dim=self.mlp_hidden,
         )
 
-        self.proj_head = nn.Linear(self.latent_dim+3, self.n_chan)
+        self.proj_head = nn.Linear(self.latent_dim+4, self.n_chan)
         self.projector = MLP(
                 in_dim=self.n_chan, 
                 hidden_list=[self.mlp_hidden]*self.mlp_layers, 
@@ -198,9 +198,9 @@ class MAgNetGNN(pl.LightningModule):
         
         
         self._encoder = Encoder(
-            node_in=self.time_slice+2, 
+            node_in=self.time_slice+3, 
             node_out=self.latent_dim,
-            edge_in=self.time_slice+1, 
+            edge_in=self.time_slice+2, 
             edge_out=self.latent_dim,
             mlp_layers=self.mlp_layers,
             mlp_hidden=self.mlp_hidden,
@@ -264,7 +264,8 @@ class MAgNetGNN(pl.LightningModule):
 
                 final_input = torch.cat([q_feat, q_inp, final_coord, timestep], dim=-1)
                 if self.interpolation == 'area':
-                    weight = torch.abs(final_coord) # B*N, 1
+                    weight = torch.norm(final_coord, 2, dim=-1)**2 # B*N, 1
+                    weight = weight.unsqueeze(-1)
                 elif self.interpolation == 'knn':
                     weight = (1/(torch.norm(final_coord, 2, dim=-1)**2)).unsqueeze(-1)
                 elif self.interpolation == 'sph':
