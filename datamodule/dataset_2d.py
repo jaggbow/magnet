@@ -9,25 +9,23 @@ from torch_geometric.nn import radius_graph
 
 from utils import *
 
-class HDF5DatasetGraph(Dataset):
+class HDF5DatasetGraph_2d(Dataset):
     
     def __init__(self, 
                  path,
                  nt,
-                 nx,
+                 res,
                  mode='train', 
-                 load_all=False,
-                 in_timesteps=16,
-                 radius=2):
+                 regular=True,
+                 load_all=False):
         
         assert mode in ['train', 'valid', 'test'], "mode must belong to one of these ['train', 'val', 'test']"
         
         f = h5py.File(path, 'r')
         self.mode = mode
         self.data = f[self.mode]
-        self.dataset = f'pde_{nt}-{nx}'
-        self.radius = radius
-        self.in_timesteps = in_timesteps
+        self.regular = regular
+        self.dataset = f'pde_{nt}-{res}'
 
         if load_all:
             data = {self.dataset: self.data[self.dataset][:]}
@@ -39,25 +37,35 @@ class HDF5DatasetGraph(Dataset):
 
     def __getitem__(self, idx):
         
-        x = torch.from_numpy(self.data['x'][idx]).unsqueeze(-1) # N, 1
+        u = torch.from_numpy(self.data[self.dataset][idx]) # T, W, W
+        W = u.shape[-1]
+        u = u.reshape(u.shape[0], -1) # T, WW
+        u = u.permute(1,0) # WW, T
+
+        if self.regular:
+            x = torch.from_numpy(self.data['x'][idx])
+            y = torch.from_numpy(self.data['y'][idx])
+            coords = torch.stack(torch.meshgrid(x,y), dim=-1).reshape(-1,2)
+        else:
+            coords = torch.from_numpy(self.data['coords'][idx])
         t = torch.from_numpy(self.data['t'][idx]) # T
-        u = torch.from_numpy(self.data[self.dataset][idx]).permute(1,0) # N, T
+        
         
         return_tensors = {
             'u': u,
-            'x': x,
+            'x': coords,
             't': t
         }
         return return_tensors
 
-class HDF5DatasetImplicitGNN(Dataset):
+class HDF5DatasetImplicitGNN_2d(Dataset):
     
     def __init__(self, 
                  path,
                  nt,
-                 nx,
-                 sampling='uniform',
-                 mode='train', 
+                 res,
+                 mode='train',
+                 regular=True,
                  load_all=False,
                  samples = 256):
         
@@ -66,9 +74,9 @@ class HDF5DatasetImplicitGNN(Dataset):
         f = h5py.File(path, 'r')
         self.mode = mode
         self.data = f[self.mode]
-        self.dataset = f'pde_{nt}-{nx}'
+        self.dataset = f'pde_{nt}-{res}'
         self.samples = samples
-        self.sampling = sampling
+        self.regular = regular
 
         if load_all:
             data = {self.dataset: self.data[self.dataset][:]}
@@ -80,20 +88,28 @@ class HDF5DatasetImplicitGNN(Dataset):
 
     def __getitem__(self, idx):
         
-        x = self.data['x'][idx]
-        # Normalize time coordinates
-        x = 2*(x-x.min())/(x.max()-x.min())-1
+        if self.regular:
+            x = self.data['x'][idx]
+            y = self.data['y'][idx]
+            coords = np.stack(np.meshgrid(x,y), axis=-1)
+            coords = coords.reshape(-1, coords.shape[-1])
+            u_hr = torch.from_numpy(self.data[self.dataset][idx]).unsqueeze(1) # T, 1, W, W
+            u_hr = u_hr.reshape(u_hr.shape[0], 1, -1)
+        else:
+            coords = self.data['coords'][idx] # N, 2
+            u_hr = torch.from_numpy(self.data[self.dataset][idx]).unsqueeze(1) # T, 1, N
+        coords = 2*(coords-coords.min(0))/(coords.max(0)-coords.min(0))-1
         
         t = self.data['t'][idx]
-        u_hr = torch.from_numpy(self.data[self.dataset][idx]).unsqueeze(1) # T, 1, L
-        T, _, L = u_hr.shape
-        u_lr = u_hr[:,:,::2] # T, 1, L//2
-        lr_coord = x[::2]
+        
+        T, _, N = u_hr.shape
+        u_lr = u_hr[:,:,::2] # T, 1, N//2
+        lr_coord = coords[::2]
 
         if self.mode in ['train']:
-            indices_left = np.setdiff1d(np.arange(0,L), np.arange(0,L)[::2])
+            indices_left = np.setdiff1d(np.arange(0,N), np.arange(0,N)[::2])
             sample_lst = torch.tensor(sorted(np.random.choice(indices_left, self.samples, replace=False)))
-            hr_coord = x[sample_lst]
+            hr_coord = coords[sample_lst]
 
             hr_points = u_hr[:,:,sample_lst].permute(0,2,1)
 
@@ -107,8 +123,8 @@ class HDF5DatasetImplicitGNN(Dataset):
             'coords_lr': lr_coord
             }
         else:
-            indices_left = np.setdiff1d(np.arange(0,L), np.arange(0,L)[::2])
-            hr_coord = x[indices_left]
+            indices_left = np.setdiff1d(np.arange(0,N), np.arange(0,N)[::2])
+            hr_coord = coords[indices_left]
 
             hr_points = u_hr[:,:,indices_left].permute(0,2,1)
 
@@ -123,13 +139,12 @@ class HDF5DatasetImplicitGNN(Dataset):
 
         return return_tensors
 
-class HDF5DatasetImplicit(Dataset):
+class HDF5DatasetImplicit_2d(Dataset):
     
     def __init__(self, 
                  path,
                  nt,
-                 nx,
-                 sampling='uniform',
+                 res,
                  mode='train', 
                  load_all=False,
                  samples = 256):
@@ -139,9 +154,8 @@ class HDF5DatasetImplicit(Dataset):
         f = h5py.File(path, 'r')
         self.mode = mode
         self.data = f[self.mode]
-        self.dataset = f'pde_{nt}-{nx}'
+        self.dataset = f'pde_{nt}-{res}'
         self.samples = samples
-        self.sampling = sampling
 
         if load_all:
             data = {self.dataset: self.data[self.dataset][:]}
@@ -153,23 +167,19 @@ class HDF5DatasetImplicit(Dataset):
 
     def __getitem__(self, idx):
         
-        x = self.data['x'][idx]
         t = self.data['t'][idx]
-        u_hr = torch.from_numpy(self.data[self.dataset][idx]).unsqueeze(1) # T, 1, L
+        u_hr = torch.from_numpy(self.data[self.dataset][idx]).unsqueeze(1) # T, 1, W, W
 
-        T, _, L = u_hr.shape
-        u_lr = F.interpolate(u_hr, size=(L // 2), mode='linear', align_corners=False) # T, 1, L//2
+        T, _, W, W = u_hr.shape
+        u_lr = F.interpolate(u_hr, size=(W // 2), mode='bilinear', align_corners=False) # T, 1, W//2, W//2
 
         if self.mode in ['train']:
-            if self.sampling == 'uniform':
-                sample_lst = torch.tensor(sorted(np.random.choice(L, self.samples, replace=False)))
-            elif self.sampling == 'boundary':
-                p = torch.softmax(torch.pow(torch.abs(torch.arange(L)-L//2)/L, 2)/0.1, dim=0).numpy()
-                sample_lst = torch.tensor(sorted(np.random.choice(L, self.samples, p=p, replace=False)))
-            hr_coord = make_coord([L])[sample_lst]
+            sample_lst = torch.tensor(sorted(np.random.choice(W*W, self.samples, replace=False)))
+    
+            hr_coord = make_coord([W, W])[sample_lst]
 
             cell = torch.ones_like(hr_coord)
-            cell *= 2 / L
+            cell *= 2 / W
             hr_points = torch.stack([to_pixel_samples(u_hr[i])[1][sample_lst] for i in range(T)], dim=0)
 
             return_tensors = {
@@ -182,10 +192,10 @@ class HDF5DatasetImplicit(Dataset):
             'cells': cell
         }
         else:
-            hr_coord = make_coord([L])
+            hr_coord = make_coord([W, W])
 
             cell = torch.ones_like(hr_coord)
-            cell *= 2 / L
+            cell *= 2 / W
             hr_points = torch.stack([to_pixel_samples(u_hr[i])[1] for i in range(T)], dim=0)
 
             return_tensors = {
@@ -198,7 +208,6 @@ class HDF5DatasetImplicit(Dataset):
         }
 
         return return_tensors
-
 
 
 class HDF5Dataset(Dataset):

@@ -1,3 +1,4 @@
+from cgitb import reset
 from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
@@ -72,21 +73,20 @@ class HDF5Datamodule_2d(pl.LightningDataModule):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, pin_memory=True)
 
 
-class HDF5DatamoduleImplicit(pl.LightningDataModule):
+class HDF5DatamoduleImplicit_2d(pl.LightningDataModule):
     def __init__(
         self, 
-        name='h5_datamodule_implicit',
+        name='h5_datamodule_implicit_2d',
         train_path="/content/drive/MyDrive/MILA/snapshots.h5", 
         val_path="/content/drive/MyDrive/MILA/snapshots.h5", 
         test_path="/content/drive/MyDrive/MILA/snapshots.h5",
         nt_train=128,
-        nx_train=256,
+        res_train=256,
         nt_val=128,
-        nx_val=256, 
+        res_val=256, 
         nt_test=256,
-        nx_test=256,
+        res_test=256,
         samples=32,
-        sampling='uniform',
         num_workers=2,
         batch_size = 32):
         super().__init__()
@@ -98,12 +98,11 @@ class HDF5DatamoduleImplicit(pl.LightningDataModule):
         self.val_path = val_path
         self.test_path = test_path
         self.nt_train = nt_train
-        self.nx_train = nx_train
-        self.sampling = sampling
+        self.res_train = res_train
         self.nt_val = nt_val
-        self.nx_val = nx_val
+        self.res_val = res_val
         self.nt_test = nt_test
-        self.nx_test = nx_test
+        self.res_test = res_test
         self.samples = samples
  
         
@@ -112,28 +111,25 @@ class HDF5DatamoduleImplicit(pl.LightningDataModule):
 
     def setup(self, stage = None):
 
-        self.train_dataset = HDF5DatasetImplicit( 
+        self.train_dataset = HDF5DatasetImplicit_2d( 
                 path=self.train_path,
                 mode='train',
-                sampling=self.sampling,
                 nt=self.nt_train,
-                nx=self.nx_train,
+                res=self.res_train,
                 samples=self.samples)
 
-        self.val_dataset = HDF5DatasetImplicit( 
+        self.val_dataset = HDF5DatasetImplicit_2d( 
                 path=self.val_path,
-                mode='valid',
-                sampling=self.sampling,
+                mode='test',
                 nt=self.nt_val,
-                nx=self.nx_val,
+                res=self.res_val,
                 samples=self.samples)
         
-        self.test_dataset = HDF5DatasetImplicit( 
+        self.test_dataset = HDF5DatasetImplicit_2d( 
                 path=self.test_path,
                 mode='test',
-                sampling=self.sampling,
                 nt=self.nt_test,
-                nx=self.nx_test,
+                res=self.res_test,
                 samples=self.samples)
 
     def train_dataloader(self):
@@ -146,23 +142,24 @@ class HDF5DatamoduleImplicit(pl.LightningDataModule):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, pin_memory=True)
 
 
-class HDF5DatamoduleGraph(pl.LightningDataModule):
+class HDF5DatamoduleGraph_2d(pl.LightningDataModule):
     def __init__(
         self, 
-        name='h5_datamodule_implicit',
+        name='h5_datamodule_graph_2d',
         train_path="/content/drive/MyDrive/MILA/snapshots.h5", 
         val_path="/content/drive/MyDrive/MILA/snapshots.h5", 
         test_path="/content/drive/MyDrive/MILA/snapshots.h5",
         nt_train=128,
-        nx_train=256,
+        res_train=256,
         nt_val=128,
-        nx_val=256, 
+        res_val=256, 
         nt_test=256,
-        nx_test=256,
-        in_timesteps=16,
-        radius=2,
+        res_test=256,
+        train_regular=True,
+        val_regular=True,
+        test_regular=True,
         num_workers=2,
-        batch_size = 32):
+        batch_size=32):
         super().__init__()
 
         self.save_hyperparameters()
@@ -172,13 +169,14 @@ class HDF5DatamoduleGraph(pl.LightningDataModule):
         self.val_path = val_path
         self.test_path = test_path
         self.nt_train = nt_train
-        self.nx_train = nx_train
+        self.res_train = res_train
         self.nt_val = nt_val
-        self.nx_val = nx_val
+        self.res_val = res_val
         self.nt_test = nt_test
-        self.nx_test = nx_test
-        self.in_timesteps = in_timesteps
-        self.radius = radius
+        self.res_test = res_test
+        self.train_regular = train_regular
+        self.val_regular = val_regular
+        self.test_regular = test_regular
  
         
         self.batch_size = batch_size
@@ -186,29 +184,26 @@ class HDF5DatamoduleGraph(pl.LightningDataModule):
 
     def setup(self, stage = None):
 
-        self.train_dataset = HDF5DatasetGraph( 
+        self.train_dataset = HDF5DatasetGraph_2d( 
                 path=self.train_path,
                 mode='train',
+                regular=self.train_regular,
                 nt=self.nt_train,
-                nx=self.nx_train,
-                in_timesteps=self.in_timesteps,
-                radius=self.radius)
+                res=self.res_train)
 
-        self.val_dataset = HDF5DatasetGraph( 
+        self.val_dataset = HDF5DatasetGraph_2d( 
                 path=self.val_path,
-                mode='valid',
+                mode='test',
+                regular=self.val_regular,
                 nt=self.nt_val,
-                nx=self.nx_val,
-                in_timesteps=self.in_timesteps,
-                radius=self.radius)
+                res=self.res_val)
         
-        self.test_dataset = HDF5DatasetGraph( 
+        self.test_dataset = HDF5DatasetGraph_2d( 
                 path=self.test_path,
                 mode='test',
+                regular=self.test_regular,
                 nt=self.nt_test,
-                nx=self.nx_test,
-                in_timesteps=self.in_timesteps,
-                radius=self.radius)
+                res=self.res_test)
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, pin_memory=True)
@@ -220,7 +215,7 @@ class HDF5DatamoduleGraph(pl.LightningDataModule):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, pin_memory=True)
 
 
-class HDF5DatamoduleImplicitGNN(pl.LightningDataModule):
+class HDF5DatamoduleImplicitGNN_2d(pl.LightningDataModule):
     def __init__(
         self, 
         name='h5_datamodule_implicit_gnn',
@@ -228,13 +223,15 @@ class HDF5DatamoduleImplicitGNN(pl.LightningDataModule):
         val_path="/content/drive/MyDrive/MILA/snapshots.h5", 
         test_path="/content/drive/MyDrive/MILA/snapshots.h5",
         nt_train=128,
-        nx_train=256,
+        res_train=256,
         nt_val=128,
-        nx_val=256, 
+        res_val=256, 
         nt_test=256,
-        nx_test=256,
+        res_test=256,
+        train_regular=False,
+        val_regular=True,
+        test_regular=True,
         samples=32,
-        sampling='uniform',
         num_workers=2,
         batch_size = 32):
         super().__init__()
@@ -246,42 +243,43 @@ class HDF5DatamoduleImplicitGNN(pl.LightningDataModule):
         self.val_path = val_path
         self.test_path = test_path
         self.nt_train = nt_train
-        self.nx_train = nx_train
+        self.res_train = res_train
         self.nt_val = nt_val
-        self.nx_val = nx_val
+        self.res_val = res_val
         self.nt_test = nt_test
-        self.nx_test = nx_test
+        self.res_test = res_test
         self.samples = samples
-        self.sampling = sampling
- 
+        self.train_regular = train_regular
+        self.val_regular = val_regular
+        self.test_regular = test_regular
         
         self.batch_size = batch_size
         self.num_workers = num_workers
 
     def setup(self, stage = None):
 
-        self.train_dataset = HDF5DatasetImplicitGNN( 
+        self.train_dataset = HDF5DatasetImplicitGNN_2d( 
                 path=self.train_path,
                 nt=self.nt_train,
-                nx=self.nx_train,
-                sampling=self.sampling,
+                res=self.res_train,
                 mode='train', 
+                regular=self.train_regular,
                 samples=self.samples)
 
-        self.val_dataset = HDF5DatasetImplicitGNN( 
+        self.val_dataset = HDF5DatasetImplicitGNN_2d( 
                 path=self.val_path,
                 nt=self.nt_val,
-                nx=self.nx_val,
-                sampling=self.sampling,
-                mode='valid', 
+                res=self.res_val,
+                mode='test', 
+                regular=self.val_regular,
                 samples=self.samples)
         
-        self.test_dataset = HDF5DatasetImplicitGNN( 
+        self.test_dataset = HDF5DatasetImplicitGNN_2d( 
                 path=self.test_path,
                 nt=self.nt_test,
-                nx=self.nx_test,
-                sampling=self.sampling,
+                res=self.res_test,
                 mode='test', 
+                regular=self.test_regular,
                 samples=self.samples)
 
     def train_dataloader(self):
