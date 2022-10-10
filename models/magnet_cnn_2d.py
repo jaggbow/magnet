@@ -1,10 +1,12 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 import pytorch_lightning as pl
 
-from torch_geometric.nn import MessagePassing, radius_graph, knn
+from torch_geometric.nn import MessagePassing, radius_graph
 
+from models.backbones.edsr import EDSR
 from models.backbones.mlp import MLP
 from utils import *
 
@@ -24,13 +26,13 @@ class Encoder(nn.Module):
                 in_dim=node_in, 
                 hidden_list=[mlp_hidden]*mlp_layers, 
                 out_dim=node_out),
-                nn.LayerNorm(node_out)
+            nn.LayerNorm(node_out)
         )
         self.edge_fn = nn.Sequential(
             MLP(
                 in_dim=edge_in, 
                 hidden_list=[mlp_hidden]*mlp_layers, 
-                out_dim=edge_out,
+                out_dim=edge_out
             ),
             nn.LayerNorm(edge_out)
         )
@@ -57,7 +59,8 @@ class InteractionNetwork(MessagePassing):
                 in_dim=node_in+edge_out, 
                 hidden_list=[mlp_hidden]*mlp_layers, 
                 out_dim=node_out),
-                nn.LayerNorm(node_out))
+            nn.LayerNorm(node_out)
+        )
         self.edge_fn = nn.Sequential(
             MLP(
                 in_dim=node_in+node_in+edge_in, 
@@ -136,7 +139,7 @@ class Decoder(nn.Module):
         # x: (E, node_in)
         return self.node_fn(x)
 
-class MAgNetGNN(pl.LightningModule):
+class MAgNetCNN_2d(pl.LightningModule):
     def __init__(self,hparams):
     
         super().__init__()
@@ -155,12 +158,14 @@ class MAgNetGNN(pl.LightningModule):
         self.latent_dim = hparams.latent_dim
         self.mlp_layers = hparams.mlp_layers
         self.mlp_hidden = hparams.mlp_hidden
+        self.scales = hparams.scales
+        self.res_layers = hparams.res_layers
         self.n_chan = hparams.n_chan
-        self.radius = hparams.radius
-        self.codec_neighbors = hparams.codec_neighbors
-        self.teacher_forcing = hparams.teacher_forcing
-        self.noise = hparams.noise
+        self.kernel_size = hparams.kernel_size
+        self.res_scale = hparams.res_scale
         self.interpolation = hparams.interpolation
+        self.radius = hparams.radius
+        self.teacher_forcing = hparams.teacher_forcing
 
         if self.loss == 'l1':
             self.criterion = nn.L1Loss()
@@ -172,25 +177,21 @@ class MAgNetGNN(pl.LightningModule):
         self.mse_criterion = nn.MSELoss()
         self.mae_criterion = nn.L1Loss()
 
-        self.encoder = Encoder(
-            node_in=self.time_slice+3, 
-            node_out=self.latent_dim,
-            edge_in=self.time_slice+2, 
-            edge_out=self.latent_dim,
-            mlp_layers=self.mlp_layers,
-            mlp_hidden=self.mlp_hidden,
-        )
-        self.processor = Processor(
-            node_in=self.latent_dim, 
-            node_out=self.latent_dim,
-            edge_in=self.latent_dim, 
-            edge_out=self.latent_dim,
-            num_message_passing_steps=self.num_message_passing_steps,
-            mlp_num_layers=self.mlp_layers,
-            mlp_hidden_dim=self.mlp_hidden,
-        )
+        self.encoder = EDSR(**{
+                "res_layers": self.res_layers,
+                "n_chan": self.n_chan,
+                "kernel_size": self.kernel_size,
+                "res_scale": self.res_scale,
+                "mode": "2d",
+                "in_chan": self.time_slice})
 
-        self.proj_head = nn.Linear(self.latent_dim+4, self.n_chan)
+        self.proj_head = nn.Sequential(
+                           MLP(
+                            in_dim=self.encoder.out_dim+5+1, 
+                            hidden_list=[self.mlp_hidden]*self.mlp_layers, 
+                            out_dim=self.n_chan),
+                           nn.LayerNorm(self.n_chan)
+                       )
         self.projector = MLP(
                 in_dim=self.n_chan, 
                 hidden_list=[self.mlp_hidden]*self.mlp_layers, 
@@ -221,67 +222,83 @@ class MAgNetGNN(pl.LightningModule):
             mlp_hidden=self.mlp_hidden,
         )
     
-    def continuous_decoder(
-        self,
-        x_lr, 
-        lr_encoded, 
-        lr_coords, 
-        hr_coords, 
-        t):
+    def continuous_decoder(self, x_t, feat, cell, coord_hr, t):
         '''
         Args:
-            x_lr, [B, T, C, L]
-            lr_encoded, [B, L, C]: 
-            lr_coords, [B, L, 1]
-            hr_coords, [B, N, 1]
-            t, [B, T]
+            x_t, [B, T, C, W, W]
+            feat, [B, C, W, W]: Feature maps
+            cell, [B, N, 1]
+            coord_hr, [B, N, 1]
+            t, [B, T_in+T_out]
         '''
-        B, T, _, L = x_lr.shape
-        N = hr_coords.shape[1]
-
-        # Find nearest k low-res neighbors for each high-res coordinate (k=2 by default)
-        flat_lr_coords = lr_coords.reshape(B*L, -1)
-        batch_lr = torch.cat([torch.LongTensor([i]*L) for i in range(B)]).to(flat_lr_coords.device)
-        flat_hr_coords = hr_coords.reshape(B*N, -1)
-        batch_hr = torch.cat([torch.LongTensor([i]*N) for i in range(B)]).to(flat_hr_coords.device)
-        assign_index = knn(flat_lr_coords, flat_hr_coords, self.codec_neighbors, batch_lr, batch_hr)
-
-        lr_encoded_flat = lr_encoded.reshape(B*L, -1)
-        timesteps = t.unsqueeze(1).repeat(1,N,1) # B, N, T
-        timesteps = timesteps.reshape(B*N, -1) # B*N, T
-
-        out = []
-        for i in range(T):
-            weights = []
-            latents = []
-            x_lr_flat = x_lr[:,i].permute(0,2,1).reshape(B*L, -1)
-            timestep = timesteps[:,i:i+1]
-            for j in range(self.codec_neighbors):
-                q_feat = lr_encoded_flat[assign_index[1,j::self.codec_neighbors]]
-                q_inp = x_lr_flat[assign_index[1,j::self.codec_neighbors]]
-                q_coord = flat_lr_coords[assign_index[1,j::self.codec_neighbors]]
-                final_coord = q_coord-flat_hr_coords
-
-                final_input = torch.cat([q_feat, q_inp, final_coord, timestep], dim=-1)
-                if self.interpolation == 'area':
-                    weight = torch.norm(final_coord, 2, dim=-1)**2 # B*N, 1
-                    weight = weight.unsqueeze(-1)
-                elif self.interpolation == 'knn':
-                    weight = (1/(torch.norm(final_coord, 2, dim=-1)**2)).unsqueeze(-1)
-                elif self.interpolation == 'sph':
-                    weight = torch.pow(1 - (L*torch.norm(final_coord, 2, dim=-1)**2), 3).unsqueeze(-1)
-                latents.append(self.proj_head(final_input)) # B*N, C
-                weights.append(weight)
-            
-            if self.interpolation == 'area':
-                latent = (latents[0]*weights[1]+latents[1]*weights[0])/(weights[1]+weights[0])
-            else:
-                latent = (latents[0]*weights[0]+latents[1]*weights[1])/(weights[1]+weights[0])
-            out.append(latent)
+        B, C, W, W = feat.shape
+        T = x_t.shape[1]
+        N_coords = coord_hr.shape[1]
         
-        out = torch.stack(out, dim=1) # B*N, T, C
-        return out
+        # Coordinates in the feature map
+        feat_coord = make_coord([W, W], flatten=False).to(feat.device).permute(2,0,1).unsqueeze(0).expand(B, 2, W, W) # B, 2, H, W
+        
+        dy = 1/W
+        dx = 1/W
 
+        tt = t.unsqueeze(1).repeat(1,cell.shape[1],1) # B, N, T
+        pred_signals = []
+        areas = []
+
+        for vx in [-1,1]:
+            for vy in [-1,1]:
+                seq_input = []
+                coord = coord_hr.clone()
+                coord[:, :, 0] += vx * dx + 1e-6
+                coord[:, :, 1] += vy * dy + 1e-6
+                coord.clamp_(-1 + 1e-6, 1 - 1e-6)
+
+                # latent code z*
+                q_feat = F.grid_sample(feat, coord.flip(-1).unsqueeze(1), mode='nearest', padding_mode="border", align_corners=False)[:,:,0].permute(0,2,1) # B, N, C
+                # coordinates
+                q_coord = F.grid_sample(feat_coord, coord.flip(-1).unsqueeze(1), mode='nearest', padding_mode="border", align_corners=False)[:,:,0].permute(0,2,1) # B, N, 1
+                # final coordinates
+                final_coord = coord_hr-q_coord
+                final_coord[:, :, 0] *= W
+                final_coord[:, :, 1] *= W
+                # cell decoding
+                final_cell = cell.clone()
+                final_cell[:, :, 0] *= W
+                final_cell[:, :, 1] *= W
+
+                sides = final_coord.reshape(B*N_coords, -1)
+                sides = sides.unsqueeze(1).repeat(1,T,1)
+                area = torch.abs(sides[:, :, 0] * sides[:, :, 1])
+                areas.append(area + 1e-9)
+
+                for i in range(T):
+                    # true solution
+                    q_inp = F.grid_sample(x_t[:,i], coord.flip(-1).unsqueeze(1), mode='nearest', padding_mode="border", align_corners=False)[:,:,0].permute(0,2,1) # B, N, C
+                    # putting all inputs together (z, [x,c], t)
+                    final_input = torch.cat([q_feat, q_inp, final_coord, final_cell, tt[:,:,i:i+1]], dim=-1)
+                    final_input = final_input.view(B*N_coords, -1)
+                    seq_input.append(final_input)
+
+                seq_input = torch.stack(seq_input, dim=1) # B*N, T, C
+                pred_signals.append(self.proj_head(seq_input))
+        
+        tot_area = torch.stack(areas).sum(dim=0)
+        xxx = areas[0]; areas[0] = areas[3]; areas[3] = xxx
+        xxx = areas[1]; areas[1] = areas[2]; areas[2] = xxx
+        ret = 0
+        for pred, area in zip(pred_signals, areas):
+            ret = ret + pred * (area / tot_area).unsqueeze(-1)
+            
+        return ret
+    
+    def feature_encoding(self, x_t):
+        B, T, C, W, W = x_t.shape
+        # Encoding x_lr and getting feature maps
+        x_t = x_t.reshape(B, T*C, W, W)
+
+        feat = self.encoder(x_t)
+
+        return feat
     
     def _build_graph(self, u, x, t):
         B, N, _ = u.shape
@@ -311,67 +328,64 @@ class MAgNetGNN(pl.LightningModule):
 
     def forward(
         self, 
-        x_lr,
-        lr_coords, 
-        hr_coords, 
+        x_t, 
+        coords, 
+        cell, 
         t, 
-        hr_last):
+        hr_last,
+        hiddens=None):
         '''
         Args:
-            x_lr: tensor of shape [B, T, C, L] that represents the low-resolution frames
-            lr_coords: tensor of shape [B, L, 1] that represents the L coordinates for sequence of low frames in the batch
-            hr_coords: tensor of shape [B, N, 1] that represents the N coordinates for sequence of points in the batch
+            x_lr: tensor of shape [B, T, C, W, W] that represents the low-resolution frames
+            coord_hr: tensor of shape [B, N, 2] that represents the N coordinates for sequence in the batch
             t: tensor of shape [B, T] represents the time-coordinates for each sequence in the batch
         '''
-        B, T, C, L = x_lr.shape
-        N = hr_coords.shape[1]
-        T_out = t.shape[1] - T
+        B, T, _, W, W = x_t.shape
+        N_coords = coords.shape[1]
+        T_out = t.shape[-1] - T
 
-        # Build graph and encode it
-        u = x_lr.permute(0,3,1,2) # B, L, T, C
-        u = u.reshape(B, L, -1) # B, L, C
-        node_features, edge_index, edge_features = self._build_graph(u, lr_coords, t[:,:T])
-        node_features, edge_features = self.encoder(node_features, edge_index, edge_features)
-        lr_encoded, _ = self.processor(node_features, edge_index, edge_features)
-
-        # Get interpolated features from low-res points
-        z = self.continuous_decoder(x_lr, lr_encoded, lr_coords, hr_coords, t) # B*N, T, C
+        feat = self.feature_encoding(x_t)
+        z = self.continuous_decoder(x_t, feat, cell, coords, t) # B*N, T, C
         hr_points = self.projector(z) # B*N, T, 1
         
         # Build Graph
-        hr_points = hr_points.reshape(B, N, T, -1) # B, N, T, C
-        hr_points = hr_points.reshape(B, N, -1) # B, N, C
-        lr_points = x_lr.permute(0,3,1,2) # B, L, T, C
-        lr_points = lr_points.reshape(B, L, -1) # B, L, C
+        hr_points = hr_points.reshape(B, N_coords, T, -1) # B, N, T, C
+        hr_points = hr_points.reshape(B, N_coords, -1) # B, N, TC
+        lr_points = x_t.permute(0,3,4,1,2) # B, W, W, T, C
+        lr_points = lr_points.reshape(B, W, W, -1) # B, W, W, TC
+        lr_points = lr_points.reshape(B, -1, lr_points.shape[-1]) # B, WW, TC
 
-        all_coords = torch.cat([lr_coords, hr_coords], dim=1) # B, (L+N), 1
+        lr_coords = make_coord([W, W]).to(feat.device).unsqueeze(0).repeat(B, 1, 1) # B, W*W, 2
+        all_coords = torch.cat([lr_coords, coords], dim=1) # B, (W*W+N), 2
 
-        all_feats = torch.cat([lr_points, hr_points], dim=1) # B, (L+N), C
-
+        all_feats = torch.cat([lr_points, hr_points], dim=1) # B, (WW+N), TC
+        
         node_features, edge_index, edge_features = self._build_graph(all_feats, all_coords, t[:,:T])
 
-
         node_features, edge_features = self._encoder(node_features, edge_index, edge_features)
+        
         node_features, _ = self._processor(node_features, edge_index, edge_features)
-        node_features = self._decoder(node_features) # B*(L+N), T_out
-        ret = node_features.reshape(B, -1, node_features.shape[-1]) # B, (L+N), T_out
+        node_features = self._decoder(node_features) # B*(WW+N), T_out
+        ret = node_features.reshape(B, -1, node_features.shape[-1]) # B, (WW+N), T_out
 
         outputs = []
-        tt = t.unsqueeze(1).repeat(1,L+N,1)
-
-        last_values = torch.cat([x_lr[:,-1].permute(0,2,1), hr_last], dim=1) # B, (L+N), 1
+        tt = t.unsqueeze(1).repeat(1,W*W+cell.shape[1],1)
+        
+        last_values = torch.cat([x_t[:,-1].permute(0,2,3,1).reshape(B, W*W, -1), hr_last], dim=1) # B, (WW+N), 1
 
         for i in range(T_out):
             delta_t = tt[:,:,T+i:T+i+1]-tt[:,:,T-1:T]
-            op = ret[...,i].unsqueeze(-1) # B, (L+N), 1
+            op = ret[...,i].unsqueeze(-1) # B, (WW+N), 1
             outputs.append(last_values+delta_t*op)
         
-        outputs = torch.stack(outputs, dim=1) # B, T, (L+N), 1
+        outputs = torch.stack(outputs, dim=1) # B, T, (WW+N), 1
 
-        out_lr = outputs[:,:,:L]
-        out_hr = outputs[:,:,L:]
-        hr_points = hr_points.reshape(B, N, T, -1)
-        hr_points = hr_points.permute(0,2,1,3)
+        out_lr = outputs[:,:,:(W*W)] # B, T, WW, C
+        out_lr = out_lr.permute(0,1,3,2) # B, T, C, WW
+        out_lr = out_lr.reshape(B, T_out, out_lr.shape[2], W, W) # B, T, C, W, W
+        out_hr = outputs[:,:,(W*W):] # B, T, N, C
+        hr_points = hr_points.reshape(B, N_coords, T, -1) # B, N, T, C
+        hr_points = hr_points.permute(0,2,1,3) # B, N, T, C
 
         return out_hr, out_lr, hr_points
     
@@ -388,9 +402,10 @@ class MAgNetGNN(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         t = train_batch['t'].float()
         u = train_batch['lr_frames'].float()
+        B, T, C, W, W = u.shape
         u_values = train_batch['hr_points'].float()
-        coords = train_batch['coords_hr'].float()
-        lr_coords = train_batch['coords_lr'].float()
+        coords = train_batch['coords'].float()
+        cells = train_batch['cells'].float()
 
         u_values_future = u_values[:,self.time_slice:] # B, T_future, N, 1
         B, T_future = u_values_future.shape[:2]
@@ -399,36 +414,26 @@ class MAgNetGNN(pl.LightningModule):
         hr_values_hat = []
 
         inp = u[:,:self.time_slice]
-        noise = self.noise*torch.randn(inp.shape).to(inp.device)
-        inp = inp+noise
-
         hr_last = u_values[:,self.time_slice-1]
-        noise = self.noise*torch.randn(hr_last.shape).to(hr_last.device)
-        hr_last = hr_last+noise
 
         for i in range(T_future//self.time_slice):
-            out_hr, out_lr, hr_points = self.forward(inp, lr_coords, coords, t[:,i*self.time_slice:(i+2)*self.time_slice], hr_last)
-            y_hat = torch.cat([out_hr, out_lr], dim=2)
+            out_hr, out_lr, hr_points = self.forward(inp, coords, cells, t[:,i*self.time_slice:(i+2)*self.time_slice], hr_last)
+            y_hat = torch.cat([out_hr, out_lr.reshape(*out_lr.shape[:3], -1).permute(0,1,3,2)], dim=2)
             u_values_hat.append(y_hat)
             hr_values_hat.append(hr_points)
         
             if self.teacher_forcing:
-                inp = u[:,(i+1)*self.time_slice:(i+2)*self.time_slice] # B, T, C, L
+                inp = u[:,(i+1)*self.time_slice:(i+2)*self.time_slice] # B, T, C, W, W
                 hr_last = u_values[:,(i+2)*self.time_slice-1]
             else:
-                inp = out_lr.permute(0,1,3,2)
+                inp = out_lr
                 hr_last = out_hr[:,-1]
-
-            noise = self.noise*torch.randn(inp.shape).to(inp.device)
-            inp = inp+noise
-
-            noise = self.noise*torch.randn(hr_last.shape).to(hr_last.device)
-            hr_last = hr_last+noise
         
         u_values_hat = torch.cat(u_values_hat, dim=1) # B, T_out, (N+L), 1 
         hr_values_hat = torch.cat(hr_values_hat, dim=1) # B, T_in, N, 1
         
-        target = torch.cat([u_values_future, u[:,self.time_slice:].permute(0,1,3,2)], dim=2)
+
+        target = torch.cat([u_values_future, u[:,self.time_slice:].reshape(B, T-self.time_slice, C, -1).permute(0,1,3,2)], dim=2)
         loss = self.criterion(u_values_hat, target)+self.criterion(hr_values_hat, u_values[:,:-self.time_slice])
         mae_loss = self.mae_criterion(u_values_hat, target)
         interp_loss = self.mae_criterion(hr_values_hat, u_values[:,:-self.time_slice])
@@ -441,10 +446,11 @@ class MAgNetGNN(pl.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
         t = val_batch['t'].float()
-        u = val_batch['lr_frames'].float() # B, T, 1, L
+        u = val_batch['lr_frames'].float() # B, T, 1, W, W
+        B, T, _, W, W = u.shape
         u_values = val_batch['hr_points'].float()
-        coords = val_batch['coords_hr'].float()
-        lr_coords = val_batch['coords_lr'].float()
+        coords = val_batch['coords'].float()
+        cells = val_batch['cells'].float()
 
         u_values_future = u_values[:,self.time_slice:] # B, T_future, N, 1
         T_future = u_values_future.shape[1]
@@ -454,22 +460,20 @@ class MAgNetGNN(pl.LightningModule):
         hr_last = u_values[:,self.time_slice-1]
 
         for i in range(T_future//self.time_slice):
-            out_hr, out_lr, _ = self.forward(
-                inp, 
-                lr_coords, 
-                coords, 
-                t[:,i*self.time_slice:(i+2)*self.time_slice], 
-                hr_last)
-            y_hat = torch.cat([out_hr, out_lr], dim=2)
+            y_hat, _, _ = self.forward(inp, coords, cells, t[:,i*self.time_slice:(i+2)*self.time_slice], hr_last)            
             u_values_hat.append(y_hat)
             
-            inp = out_lr.permute(0,1,3,2)
-            hr_last = out_hr[:,-1]
+            inp = y_hat.permute(0,1,3,2) # B, T, C, WW
+            W_inp = int(inp.shape[-1]**0.5)
+            B, T = inp.shape[:2]
+            inp = inp.reshape(-1, *inp.shape[2:]) # BT, C, WW
+            inp = inp.reshape(-1, inp.shape[1], W_inp, W_inp) # BT, C, W, W
+            inp = F.interpolate(inp, size=W, mode='bilinear', align_corners=False).reshape(B, T, -1, W, W)
+            hr_last = y_hat[:,-1]
         
         u_values_hat = torch.cat(u_values_hat, dim=1)
-        target = torch.cat([u_values_future, u[:,self.time_slice:].permute(0,1,3,2)], dim=2)
-        loss = self.criterion(u_values_hat, target)
-        mae_loss = self.mae_criterion(u_values_hat, target)
+        loss = self.criterion(u_values_hat, u_values_future)
+        mae_loss = self.mae_criterion(u_values_hat, u_values_future)
 
         self.log('val_loss', loss, prog_bar=True)
         self.log('val_mae_loss', mae_loss, prog_bar=True)

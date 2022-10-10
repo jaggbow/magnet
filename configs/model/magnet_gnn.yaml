@@ -9,7 +9,7 @@ params:
   radius: 0.08
   n_chan: 128
   teacher_forcing: True
-  codec_neighbors: 2
+  codec_neighbors: 4
   noise: 0
   interpolation: area
   # Optimization hyperparameters

@@ -1,11 +1,11 @@
-name: mpnn
+name: mpnn_2d
 params:
   # Model hyperparameters
   hidden_features: 128
   hidden_layer: 5
-  time_window: 16
+  time_window: 10
   teacher_forcing: False
-  neighbors: 3
+  neighbors: 4
   # Optimization hyperparameters
   factor: 0.3
   step_size: 50

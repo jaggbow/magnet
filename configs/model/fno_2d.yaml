@@ -1,11 +1,13 @@
-name: mpnn
+name: fno_2d
 params:
   # Model hyperparameters
-  hidden_features: 128
-  hidden_layer: 5
-  time_window: 16
-  teacher_forcing: False
-  neighbors: 3
+  modes_1: 12
+  modes_2: 12
+  width: 256
+  num_layers: 5
+  time_history: 10
+  time_future: 10
+  teacher_forcing: True
   # Optimization hyperparameters
   factor: 0.3
   step_size: 50

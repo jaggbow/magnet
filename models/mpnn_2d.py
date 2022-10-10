@@ -48,7 +48,7 @@ class GNN_Layer(MessagePassing):
         self.out_features = out_features
         self.hidden_features = hidden_features
 
-        self.message_net_1 = nn.Sequential(nn.Linear(2 * in_features + time_window + 1 + n_variables, hidden_features),
+        self.message_net_1 = nn.Sequential(nn.Linear(2 * in_features + time_window + 2 + n_variables, hidden_features),
                                            Swish()
                                            )
         self.message_net_2 = nn.Sequential(nn.Linear(hidden_features, hidden_features),
@@ -90,7 +90,7 @@ class GNN_Layer(MessagePassing):
             return update
 
 
-class MPNN(pl.LightningModule):
+class MPNN_2d(pl.LightningModule):
     def __init__(self,hparams):
     
         super().__init__()
@@ -119,7 +119,6 @@ class MPNN(pl.LightningModule):
             n_variables=1  # variables = eq_variables + time
         ) for _ in range(self.hidden_layer - 1)))
 
-        # The last message passing last layer has a fixed output size to make the use of the decoder 1D-CNN easier
         self.gnn_layers.append(GNN_Layer(in_features=self.hidden_features,
                                          hidden_features=self.hidden_features,
                                          out_features=self.hidden_features,
@@ -129,17 +128,17 @@ class MPNN(pl.LightningModule):
                                )
 
         self.embedding_mlp = nn.Sequential(
-            nn.Linear(self.time_window + 2, self.hidden_features),
+            nn.Linear(self.time_window + 3, self.hidden_features),
             Swish(),
             nn.Linear(self.hidden_features, self.hidden_features),
             Swish()
         )
 
         # Decoder CNN, maps to different outputs (temporal bundling)
-        
         if(self.time_window==10):
             self.output_mlp = nn.Sequential(
                                             nn.Conv1d(1, 8, 16, stride=6),
+                                            Swish(),
                                             nn.Conv1d(8, 1, 10, stride=1))
         if(self.time_window==16):
             self.output_mlp = nn.Sequential(
@@ -220,7 +219,6 @@ class MPNN(pl.LightningModule):
                     steps: list):
         """
         data, [B, T, N]
-        labels, [B, T, N]
         t, [B]
         x, [B, N]
         steps, [B]
@@ -239,13 +237,15 @@ class MPNN(pl.LightningModule):
             batch = torch.cat((batch, torch.ones(nx, device=batch.device) * b), )
 
         # Calculate the edge_index
-        
         dx = x[0][1] - x[0][0]
-        radius = self.n * dx + 0.0001
+        dy = x[0][int(nx**0.5)] - x[0][0]
+        dr = torch.norm(dx-dy, p=2)
+        radius = self.n * dr + 0.0001
+
         edge_index = radius_graph(x_pos, r=radius, batch=batch.long(), loop=False)
         
         graph = Data(x=u, edge_index=edge_index)
-        graph.pos = torch.cat((t_pos[:, None], x_pos[:, None]), 1)
+        graph.pos = torch.cat((t_pos[:, None], x_pos), 1)
         graph.batch = batch.long()
 
         return graph
@@ -262,7 +262,7 @@ class MPNN(pl.LightningModule):
             u[:,:self.time_window,:], 
             t,
             x,
-            steps=[0]*B)
+            steps=[self.time_window-1]*B)
         
         target = u[:,self.time_window:,:]
         T_out = target.shape[1]
@@ -278,13 +278,13 @@ class MPNN(pl.LightningModule):
                         u[:,(i+1)*self.time_window:(i+2)*self.time_window,:], 
                         t,
                         x,
-                        steps=[0]*B)
+                        steps=[(i+2)*self.time_window-1]*B)
             else:
                 graph = self._build_graph(
                         y_hat, 
                         t,
                         x,
-                        steps=[0]*B)
+                        steps=[(i+2)*self.time_window-1]*B)
 
         u_hat = torch.cat(u_hat, dim=1)
 
@@ -299,7 +299,7 @@ class MPNN(pl.LightningModule):
     def validation_step(self, val_batch, batch_idx):
         u = val_batch['u'].float().permute(0,2,1)
         x = val_batch['x'].float().squeeze(-1)
-        B, _, N = u.shape
+        B, T_in, N = u.shape
         t = val_batch['t'].float() # B, T
         dt = t[0][1] - t[0][0]
                 
@@ -307,7 +307,7 @@ class MPNN(pl.LightningModule):
             u[:,:self.time_window,:], 
             t,
             x,
-            steps=[0]*B)
+            steps=[self.time_window-1]*B)
         
         target = u[:,self.time_window:,:]
         T_out = target.shape[1]
@@ -322,7 +322,7 @@ class MPNN(pl.LightningModule):
                         y_hat, 
                         t,
                         x,
-                        steps=[0]*B)
+                        steps=[(i+2)*self.time_window-1]*B)
 
         u_hat = torch.cat(u_hat, dim=1)
 

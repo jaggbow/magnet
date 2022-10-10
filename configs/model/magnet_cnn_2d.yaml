@@ -1,0 +1,22 @@
+name: magnet_cnn_2d
+params:
+  # Model hyperparameters
+  time_slice: 16
+  latent_dim: 32
+  num_message_passing_steps: 10
+  mlp_layers: 4
+  mlp_hidden: 64
+  radius: 0.1
+  scales: 1
+  n_chan: 128
+  kernel_size: 3
+  res_scale: 1
+  res_layers: 16
+  teacher_forcing: True
+  interpolation: area
+  # Optimization hyperparameters
+  factor: 0.3
+  step_size: 40
+  loss: l1
+  lr: 0.001
+  weight_decay: 0.0000001
