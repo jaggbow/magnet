@@ -1,0 +1,18 @@
+_target_: datamodule.h5_datamodule_2d.HDF5DatamoduleImplicitGNN_2d
+name: h5_datamodule_implicit_gnn_2d
+train_path: /home/mila/o/oussama.boussif/scratch/pdeone/data/B1/uniform/burgers_train_irregular_B1_512.h5
+val_path: /home/mila/o/oussama.boussif/scratch/pdeone/data/B1/burgers_test_B1_32.h5
+test_path: /home/mila/o/oussama.boussif/scratch/pdeone/data/B1/burgers_test_B1_32.h5
+nt_train: 50
+res_train: 64
+nt_val: 50
+res_val: 32
+nt_test: 50
+res_test: 32
+samples: 32
+train_regular: False
+val_regular: True
+test_regular: True
+
+num_workers: 3
+batch_size: 32
