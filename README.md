@@ -3,17 +3,6 @@ This is the official repository to the paper ["MAgNet: Mesh-Agnostic Neural PDE 
 
 In this paper, we aim to address the problem of learning solutions to Partial Differential Equations (PDE) while also generalizing to any mesh or resolution at test-time. This effectively enables us to generate predictions at any point of the PDE domain.  
 
-```
-@inproceedings{
-boussif2022magnet,
-title={{MA}gNet: Mesh Agnostic Neural {PDE} Solver},
-author={Oussama Boussif and Yoshua Bengio and Loubna Benabbou and Dan Assouline},
-booktitle={ICML 2022 2nd AI for Science Workshop},
-year={2022},
-url={https://openreview.net/forum?id=tbIJmAdqYc8}
-}
-```
-
 ![MAgNet](assets/magnet.jpg "MAgNet: Mesh-Agnostic Neural PDE Solver")
 
 ![Predictions](assets/predictions.JPG "Predictions vs Ground-Truth for different resolutions")
