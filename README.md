@@ -6,6 +6,21 @@ In this paper, we aim to address the problem of learning solutions to Partial Di
 ![MAgNet](assets/magnet.jpg "MAgNet: Mesh-Agnostic Neural PDE Solver")
 
 ![Predictions](assets/predictions.JPG "Predictions vs Ground-Truth for different resolutions")
+# Citation
+To cite our work, please use the following bibtex:
+```
+@inproceedings{magnet_neurips_2022,
+ author = {Boussif, Oussama and Bengio, Yoshua and Benabbou, Loubna and Assouline, Dan},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {S. Koyejo and S. Mohamed and A. Agarwal and D. Belgrave and K. Cho and A. Oh},
+ pages = {31972--31985},
+ publisher = {Curran Associates, Inc.},
+ title = {MAgNet: Mesh Agnostic Neural PDE Solver},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2022/file/cf4c7ee0734cdfe09a099cf6cd7b117a-Paper-Conference.pdf},
+ volume = {35},
+ year = {2022}
+}
+```
 # Requirements
 
 Start by installing the required modules:
