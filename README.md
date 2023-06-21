@@ -28,7 +28,7 @@ Start by installing the required modules:
 pip install -r requirements.txt
 ```
 # Dataset
-The dataset is available for download at the following link: [magnet dataset](https://www.dropbox.com/sh/5d8vq03vmw21dhf/AAD1nK5ElGTiQ3dkoGjstthHa?dl=0) and contains two folders: ``1d`` and ``2d`` for the 1D and 2D PDE datasets respectively.
+The dataset is available for download at the following link: [magnet dataset](https://drive.google.com/drive/folders/1hZ67IOFr8XwErpXYZnDC9WRcFmb-BeBb?usp=sharing) and contains two folders: ``1d`` and ``2d`` for the 1D and 2D PDE datasets respectively.
 
 The structure of the 1D dataset is as follows:
 ```
